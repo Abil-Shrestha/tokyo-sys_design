@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Nueve tokyo gradients",
-  description: "Deeznuts",
+  description: "Deez Gradients",
 };
 
 export const viewport = {
