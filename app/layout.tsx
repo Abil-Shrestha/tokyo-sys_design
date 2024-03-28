@@ -57,6 +57,39 @@ const sligoil = localFont({
   variable: "--font-sligoil",
 });
 
+const outward = localFont({
+  src: [
+    {
+      path: "../public/fonts/outward/outward-borders-webfont.woff",
+      weight: "400",
+      style: "normal",
+    },
+  ],
+  variable: "--font-outward",
+});
+
+const milkman = localFont({
+  src: [
+    {
+      path: "../public/fonts/milkman/milkman.woff",
+      weight: "400",
+      style: "normal",
+    },
+  ],
+  variable: "--font-milkman",
+});
+
+const geist = localFont({
+  src: [
+    {
+      path: "../public/fonts/geistmono/GeistMono-Regular.woff",
+      weight: "400",
+      style: "normal",
+    },
+  ],
+  variable: "--font-geistmono",
+});
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -76,7 +109,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.className} ${array.variable} ${pramukh.variable} ${melodrama.variable} ${sligoil.variable} antialiased`}
+      className={`${inter.className} ${array.variable} ${geist.variable} ${pramukh.variable} ${melodrama.variable} ${sligoil.variable} ${milkman.variable} ${outward.variable} antialiased`}
       suppressHydrationWarning={true}
     >
       <body className={inter.className}>
