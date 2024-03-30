@@ -28,3 +28,41 @@
     }
   }
 }
+
+.card {
+  @apply p-20 bg-gradient-to-b hover:scale-105 cursor-pointer ease-in-out transition rounded-xl w-full hover:rotate-0 duration-500 hover:-translate-y-12 h-full object-cover  transform origin-bottom rotate-12 text-3xl;
+}
+
+@keyframes moveGradientLeftToRight {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes moveGradientRightToLeft {
+  0% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.animated-gradient-left-to-right {
+  animation: moveGradientLeftToRight 5s ease infinite;
+  background-size: 200% 200%;
+}
+
+.animated-gradient-right-to-left {
+  animation: moveGradientRightToLeft 5s ease infinite;
+  background-size: 100% 100%;
+}

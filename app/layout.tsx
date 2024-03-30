@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import localFont from "next/font/local";
+import Footer from "@/src/components/Footer";
 import "./globals.css";
 
 const array = localFont({
@@ -113,7 +114,8 @@ export default function RootLayout({
       suppressHydrationWarning={true}
     >
       <body className={inter.className}>
-        <main className="p-6 pt-3 md:pt-6 min-h-screen">{children}</main>
+        <main className="min-h-screen">{children}</main>
+        <Footer />
       </body>
     </html>
   );
