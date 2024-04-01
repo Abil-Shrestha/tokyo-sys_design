@@ -91,6 +91,22 @@ const geist = localFont({
   variable: "--font-geistmono",
 });
 
+const migra = localFont({
+  src: [
+    {
+      path: "../public/fonts/migra/MigraItalic-ExtraboldItalic.woff2",
+      weight: "600",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/migra/MigraItalic-ExtralightItalic.woff2",
+      weight: "200",
+      style: "italic",
+    },
+  ],
+  variable: "--font-migra",
+});
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -110,7 +126,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.className} ${array.variable} ${geist.variable} ${pramukh.variable} ${melodrama.variable} ${sligoil.variable} ${milkman.variable} ${outward.variable} antialiased`}
+      className={`${inter.className} ${array.variable} ${geist.variable} ${pramukh.variable} ${melodrama.variable} ${migra.variable} ${sligoil.variable} ${milkman.variable} ${outward.variable} antialiased`}
       suppressHydrationWarning={true}
     >
       <body className={inter.className}>

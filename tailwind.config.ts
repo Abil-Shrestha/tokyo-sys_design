@@ -27,6 +27,7 @@ const config: Config = {
         outward: ["var(--font-outward)"],
         milkman: ["var(--font-milkman)"],
         geistmono: ["var(--font-geistmono)"],
+        migra:["var(--font-migra)"],
       },
       keyframes: {
         gradientX: {
