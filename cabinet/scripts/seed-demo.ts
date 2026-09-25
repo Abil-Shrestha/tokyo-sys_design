@@ -1,5 +1,6 @@
 // Fills a library with sample content, for trying Cabinet out and for
-// screenshots:  npx tsx scripts/seed-demo.ts <library-path> [config-dir]
+// screenshots:  npm run seed [-- <library-path> [config-dir]]
+// Without arguments it fills the development library used by `npm run dev`.
 //
 // Images are generated locally; links point at a small local fixture site so
 // the script works offline.
@@ -73,7 +74,6 @@ async function main() {
   const article = await cabinet.addUrl(`${fixtures.url}/articles/joinery`, { tags: ["craft"], collectionId: reading.id });
   const product = await cabinet.addUrl(`${fixtures.url}/shop/chair`, { collectionId: home.id });
   await cabinet.addUrl(`${fixtures.url}/recipes/miso`);
-  await cabinet.addUrl(`${fixtures.url}/missing-page`, { title: "An article that moved" });
   await cabinet.jobs.idle(60_000);
 
   lib.updateItem(article.id, { pinned: true, note: "Read before the Kyoto trip." });

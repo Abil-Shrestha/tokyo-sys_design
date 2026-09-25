@@ -20,7 +20,7 @@ function pump(): void {
     const task = queue.shift()!;
     running++;
     void task()
-      .catch(() => {})
+      .catch((err) => console.warn("[cabinet] could not derive media", err))
       .finally(() => {
         running--;
         pump();
@@ -63,8 +63,10 @@ async function videoPoster(item: ItemCard): Promise<void> {
 }
 
 async function pdfDerive(item: ItemCard): Promise<void> {
-  const pdfjs = await import("pdfjs-dist");
-  const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
+  // The legacy build carries polyfills for APIs that current browsers
+  // (and Electron) do not all have yet.
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const workerUrl = (await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")).default;
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
   const task = pdfjs.getDocument({ url: blobUrl(item.asset!) });
   const doc = await task.promise;
