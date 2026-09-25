@@ -14,7 +14,8 @@ async function persist() {
   if (!itemId) return;
   const tags = $("tags").value.split(",").map((t) => t.trim()).filter(Boolean);
   try {
-    await call("PATCH", `/api/items/${itemId}`, { note: $("note").value, tags });
+    // Only your own tags are shown here; the ones Cabinet adds are kept.
+    await call("PATCH", `/api/items/${itemId}`, { note: $("note").value, userTags: tags });
     status("Saved", "ok");
   } catch (err) {
     status(err.message, "err");
@@ -58,6 +59,7 @@ async function run() {
     $("domain").textContent = item.domain || new URL(tab.url).hostname;
     if (snapshot) $("thumb").src = snapshot;
     else if (tab.favIconUrl) $("thumb").src = tab.favIconUrl;
+    else $("thumb").classList.add("hidden");
     $("tags").value = (item.tags || []).filter((t) => t.source === "user").map((t) => t.name).join(", ");
     $("note").value = item.note || "";
     $("open").href = itemUrl(settings.server, itemId);

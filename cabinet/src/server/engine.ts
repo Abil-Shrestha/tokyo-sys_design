@@ -159,6 +159,9 @@ export class Cabinet {
     if (existing) {
       if (opts.tags?.length) this.lib.addTags([existing.id], opts.tags);
       if (opts.collectionId) this.lib.addToCollection(opts.collectionId, [existing.id]);
+      if (opts.snapshot?.length && !existing.preview) {
+        await this.setPreview(existing.id, opts.snapshot).catch(() => {});
+      }
       return { id: existing.id, duplicate: true };
     }
     const fields: ItemFields & { kind: "link" } = {

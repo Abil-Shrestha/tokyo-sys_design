@@ -183,7 +183,10 @@ export interface UpdateItemInput {
   note?: string | null;
   url?: string | null;
   pinned?: boolean;
+  /** Replaces all tags, whatever added them. */
   tags?: string[];
+  /** Replaces only the tags you added yourself, keeping page and AI tags. */
+  userTags?: string[];
   kind?: ItemKind;
 }
 

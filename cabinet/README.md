@@ -142,8 +142,9 @@ library folder.
 ## Development
 
 ```bash
-npm test             # Vitest: library, search, enrichment, HTTP API, AI (43 tests)
+npm test             # Vitest: library, search, enrichment, HTTP API, AI
 npm run typecheck
+npm run build && npm run test:e2e   # drives the real desktop app through the main flows
 ```
 
 Project layout and internals are described in

@@ -300,6 +300,7 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
     }
     if (typeof body.pinned === "boolean") patch.pinned = body.pinned;
     if (body.tags) patch.tags = strArray(body.tags);
+    if (body.userTags) patch.userTags = strArray(body.userTags);
     const item = lib.updateItem((req.params as { id: string }).id, patch);
     if (!item) throw new HttpError(404, "Item not found");
     return item;

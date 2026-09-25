@@ -481,9 +481,10 @@ export class Library extends EventEmitter {
     this.db.tx(() => {
       this.patchItem(id, fields, { silent: true });
       if (patch.tags) this.setTagsTx(id, patch.tags);
+      else if (patch.userTags) this.setUserTagsTx(id, patch.userTags);
     });
     this.emitEvent({ type: "item.updated", id });
-    if (patch.tags) this.emitEvent({ type: "tags.changed" });
+    if (patch.tags || patch.userTags) this.emitEvent({ type: "tags.changed" });
     return this.getItem(id);
   }
 
@@ -584,6 +585,20 @@ export class Library extends EventEmitter {
       }
     }
     this.addTagsTx([id], [...wanted].filter((t) => !current.includes(t)), "user");
+    this.reindex(id);
+  }
+
+  private setUserTagsTx(id: string, tags: string[]): void {
+    const wanted = new Set(tags.map(normalizeTag).filter(Boolean));
+    const current = this.db.all<{ tag: string; source: string }>("SELECT tag, source FROM item_tags WHERE item_id = ?", [id]);
+    for (const t of current) {
+      if (t.source === "user" && !wanted.has(t.tag)) {
+        this.db.run("DELETE FROM item_tags WHERE item_id = ? AND tag = ?", [id, t.tag]);
+        this.logChange("item_tag", `${id}\u0000${t.tag}`, "remove", { item_id: id, tag: t.tag });
+      }
+    }
+    const have = new Set(current.map((t) => t.tag));
+    this.addTagsTx([id], [...wanted].filter((t) => !have.has(t)), "user");
     this.reindex(id);
   }
 

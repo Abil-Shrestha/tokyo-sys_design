@@ -164,3 +164,17 @@ describe("colours", () => {
     expect(palette[0].weight).toBeCloseTo(0.5, 1);
   });
 });
+
+describe("user tags", () => {
+  it("replaces only your own tags", async () => {
+    const ctx = await openTestCabinet({ startJobs: false });
+    try {
+      const { id } = ctx.cabinet.addNote("x", { tags: ["mine", "old"] });
+      ctx.lib.replaceGeneratedTags(id, ["from-page"], "auto");
+      ctx.lib.updateItem(id, { userTags: ["mine", "new"] });
+      expect(ctx.lib.getItem(id)!.tags.map((t) => `${t.source}:${t.name}`).sort()).toEqual(["auto:from-page", "user:mine", "user:new"]);
+    } finally {
+      await ctx.cleanup();
+    }
+  });
+});

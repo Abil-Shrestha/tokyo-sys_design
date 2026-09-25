@@ -20,7 +20,8 @@
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
     "icons": "node scripts/make-icons.mjs",
-    "seed": "tsx scripts/seed-demo.ts"
+    "seed": "tsx scripts/seed-demo.ts",
+    "test:e2e": "node test/e2e/app.e2e.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -46,6 +47,7 @@
     "lucide-react": "^1.48.0",
     "marked": "^18.0.14",
     "pdfjs-dist": "^6.3.289",
+    "playwright-core": "^1.56.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tsx": "^4.23.15",
