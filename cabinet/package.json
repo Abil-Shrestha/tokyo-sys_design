@@ -43,6 +43,7 @@
     "esbuild": "^0.28.2",
     "lucide-react": "^1.48.0",
     "marked": "^18.0.14",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tsx": "^4.23.15",

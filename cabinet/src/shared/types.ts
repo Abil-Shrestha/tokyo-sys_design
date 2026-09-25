@@ -69,6 +69,8 @@ export interface ItemCard {
   linkType: LinkType | null;
   title: string | null;
   description: string | null;
+  /** AI summary, or for images an AI description of what is in them. */
+  summary: string | null;
   excerpt: string | null;
   url: string | null;
   domain: string | null;
@@ -95,7 +97,6 @@ export interface ItemCard {
 /** Full item including long text fields, used by the detail view. */
 export interface Item extends ItemCard {
   body: string | null;
-  summary: string | null;
   content: string | null;
   contentHtml: string | null;
   note: string | null;

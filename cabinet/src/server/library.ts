@@ -298,6 +298,7 @@ export class Library extends EventEmitter {
       linkType: row.link_type,
       title: row.title,
       description: row.description,
+      summary: row.summary,
       excerpt: excerptOf(row),
       url: row.url,
       domain: row.domain,
@@ -340,7 +341,6 @@ export class Library extends EventEmitter {
     return {
       ...card,
       body: row.body,
-      summary: row.summary,
       content: row.content,
       contentHtml: row.content_html,
       note: row.note,
