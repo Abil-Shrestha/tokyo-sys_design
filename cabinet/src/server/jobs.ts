@@ -53,18 +53,27 @@ export class JobRunner {
     this.tick();
   }
 
-  async stop(): Promise<void> {
+  /** Stops taking new jobs and waits a little for running ones to finish. */
+  async stop(graceMs = 3000): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    while (this.running > 0) await new Promise((r) => setTimeout(r, 50));
+    const deadline = Date.now() + graceMs;
+    while (this.running > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    // Anything still running is picked up again on the next start.
   }
 
   enqueue(type: string, itemId: string | null, payload: Record<string, unknown> = {}, delayMs = 0): void {
     if (itemId) {
       // Coalesce: one pending job of a given type per item is enough.
-      const existing = this.db.get("SELECT id FROM jobs WHERE type = ? AND item_id = ? AND locked_at IS NULL", [type, itemId]);
-      if (existing) return;
+      const existing = this.db.get<{ id: number; payload: string }>("SELECT id, payload FROM jobs WHERE type = ? AND item_id = ? AND locked_at IS NULL", [type, itemId]);
+      if (existing) {
+        if (Object.keys(payload).length) {
+          const merged = { ...JSON.parse(existing.payload || "{}"), ...payload };
+          this.db.run("UPDATE jobs SET payload = ? WHERE id = ?", [JSON.stringify(merged), existing.id]);
+        }
+        return;
+      }
     }
     this.db.run("INSERT INTO jobs (type, item_id, payload, run_after, created_at) VALUES (?, ?, ?, ?, ?)", [
       type,
@@ -96,8 +105,13 @@ export class JobRunner {
   private tick(): void {
     if (this.stopped) return;
     while (this.running < this.concurrency) {
+      // Never run two jobs of the same type for the same item at once.
       const row = this.db.get<{ id: number; type: string; item_id: string | null; payload: string; attempts: number }>(
-        "SELECT id, type, item_id, payload, attempts FROM jobs WHERE locked_at IS NULL AND run_after <= ? ORDER BY run_after, id LIMIT 1",
+        `SELECT id, type, item_id, payload, attempts FROM jobs
+         WHERE locked_at IS NULL AND run_after <= ?
+           AND (item_id IS NULL OR NOT EXISTS (
+             SELECT 1 FROM jobs running WHERE running.locked_at IS NOT NULL AND running.type = jobs.type AND running.item_id = jobs.item_id))
+         ORDER BY run_after, id LIMIT 1`,
         [Date.now()],
       );
       if (!row) break;

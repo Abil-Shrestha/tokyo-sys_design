@@ -5,7 +5,7 @@ import { normalizeTag } from "../../shared/query";
 import { useTags } from "../queries";
 import { setState } from "../store";
 
-export function TagEditor({ tags, onChange }: { tags: ItemTag[]; onChange: (names: string[]) => void }) {
+export function TagEditor({ tags, onAdd, onRemove }: { tags: ItemTag[]; onAdd: (name: string) => void; onRemove: (name: string) => void }) {
   const [value, setValue] = useState("");
   const [focus, setFocus] = useState(false);
   const [highlight, setHighlight] = useState(-1);
@@ -27,7 +27,7 @@ export function TagEditor({ tags, onChange }: { tags: ItemTag[]; onChange: (name
     setValue("");
     setHighlight(-1);
     if (!tag || names.includes(tag)) return;
-    onChange([...names, tag]);
+    onAdd(tag);
   };
 
   const mine = tags.filter((t) => t.source === "user");
@@ -41,7 +41,7 @@ export function TagEditor({ tags, onChange }: { tags: ItemTag[]; onChange: (name
             <button className="tag-name" onClick={() => setState({ query: `#${t.name}`, scope: { type: "all" }, openItemId: null })}>
               {t.name}
             </button>
-            <button className="tag-remove" onClick={() => onChange(names.filter((n) => n !== t.name))} aria-label={`Remove ${t.name}`}>
+            <button className="tag-remove" onClick={() => onRemove(t.name)} aria-label={`Remove ${t.name}`}>
               <X size={11} />
             </button>
           </span>
@@ -52,7 +52,7 @@ export function TagEditor({ tags, onChange }: { tags: ItemTag[]; onChange: (name
             <button className="tag-name" onClick={() => setState({ query: `#${t.name}`, scope: { type: "all" }, openItemId: null })}>
               {t.name}
             </button>
-            <button className="tag-remove" onClick={() => onChange(names.filter((n) => n !== t.name))} aria-label={`Remove ${t.name}`}>
+            <button className="tag-remove" onClick={() => onRemove(t.name)} aria-label={`Remove ${t.name}`}>
               <X size={11} />
             </button>
           </span>
@@ -73,12 +73,14 @@ export function TagEditor({ tags, onChange }: { tags: ItemTag[]; onChange: (name
           }}
           onKeyDown={(e) => {
             e.stopPropagation();
+            // Let input methods (Japanese, Chinese…) finish composing first.
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === "Enter" || e.key === "," || e.key === "Tab") {
               if (!value.trim()) return;
               e.preventDefault();
               add(highlight >= 0 && suggestions[highlight] ? suggestions[highlight].name : value);
             } else if (e.key === "Backspace" && !value && names.length) {
-              onChange(names.slice(0, -1));
+              onRemove(names[names.length - 1]);
             } else if (e.key === "ArrowDown") {
               e.preventDefault();
               setHighlight((h) => Math.min(suggestions.length - 1, h + 1));

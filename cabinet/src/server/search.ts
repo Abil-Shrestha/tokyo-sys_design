@@ -34,7 +34,8 @@ function typeCondition(types: TypeName[], params: unknown[]): string {
     params.push(...kinds);
   }
   if (linkTypes.length) {
-    parts.push(`items.link_type IN (${linkTypes.map(() => "?").join(",")})`);
+    // COALESCE keeps NOT (...) true for items without a link type.
+    parts.push(`COALESCE(items.link_type, '') IN (${linkTypes.map(() => "?").join(",")})`);
     params.push(...linkTypes);
   }
   return parts.length ? `(${parts.join(" OR ")})` : "0";
@@ -52,17 +53,25 @@ function colorCondition(color: string, params: unknown[]): string {
     AND ((l - ?) * (l - ?) + (a - ?) * (a - ?) + (b - ?) * (b - ?)) < 400)`;
 }
 
-export function buildSearch(q: ParsedQuery): SearchSql {
+/**
+ * Compiles a parsed query to SQL. With `rank: false` the words become a plain
+ * filter instead of a ranked join, so two queries can be combined (a smart
+ * collection's rule and a search typed inside it).
+ */
+export function buildSearch(q: ParsedQuery, opts: { rank?: boolean } = {}): SearchSql {
   const where: string[] = [];
   const params: unknown[] = [];
   let join = "";
   const joinParams: unknown[] = [];
 
   const match = ftsMatchFor(q.words, q.phrases);
-  if (match) {
+  if (match && opts.rank !== false) {
     join = `JOIN (SELECT item_id, bm25(items_fts, 0.0, 10.0, 4.0, 6.0, 2.0) AS rank
                   FROM items_fts WHERE items_fts MATCH ?) f ON f.item_id = items.id`;
     joinParams.push(match);
+  } else if (match) {
+    where.push("items.id IN (SELECT item_id FROM items_fts WHERE items_fts MATCH ?)");
+    params.push(match);
   }
 
   // Soft words match the text OR the colour/type; one id set keeps it indexed.
@@ -157,10 +166,11 @@ export function buildSearch(q: ParsedQuery): SearchSql {
     params.push(q.before);
   }
 
-  return { join, joinParams, where, params, hasRank: !!match };
+  return { join, joinParams, where, params, hasRank: !!join };
 }
 
 export function orderClause(sort: SortOrder, hasRank: boolean, seed = 1): string {
+  seed = Number.isFinite(seed) ? Math.abs(Math.floor(seed)) : 1;
   switch (sort) {
     case "oldest":
       return "items.created_at ASC, items.id ASC";

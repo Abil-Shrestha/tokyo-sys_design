@@ -1,6 +1,6 @@
 import { QueryClient, useInfiniteQuery, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { ItemCard, ItemPage, LibraryEvent } from "../shared/types";
+import type { Item, ItemCard, ItemPage, LibraryEvent } from "../shared/types";
 import { api, eventsUrl } from "./api";
 import { scopeKey, type Scope } from "./store";
 
@@ -71,8 +71,23 @@ export function useInfo() {
   return useQuery({ queryKey: ["info"], queryFn: api.info });
 }
 
-/** Replaces one card wherever it appears in cached item lists. */
-function patchCard(card: ItemCard): void {
+/** The card-sized part of a full item, so list caches stay small. */
+function toCard(item: Item): ItemCard {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { body, content, contentHtml, note, author, source, error, aiStatus, collections, links, ...card } = item;
+  return card;
+}
+
+const membershipKey = (c: ItemCard) => `${c.pinned}|${c.deletedAt}|${c.kind}|${c.linkType}|${c.tags.map((t) => t.name).join(",")}`;
+
+/**
+ * Replaces one card wherever it appears in cached item lists. When a change
+ * could move the card into or out of a list (pinned, trashed, retagged…),
+ * the lists are refetched too.
+ */
+function patchCard(item: Item): void {
+  const card = toCard(item);
+  let membershipChanged = false;
   queryClient.setQueriesData<InfiniteData<ItemPage>>({ queryKey: ["items"] }, (data) => {
     if (!data) return data;
     let changed = false;
@@ -81,11 +96,13 @@ function patchCard(card: ItemCard): void {
       items: p.items.map((i) => {
         if (i.id !== card.id) return i;
         changed = true;
+        if (membershipKey(i) !== membershipKey(card)) membershipChanged = true;
         return card;
       }),
     }));
     return changed ? { ...data, pages } : data;
   });
+  if (membershipChanged) invalidateSoon("items");
 }
 
 let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -104,9 +121,15 @@ function invalidateSoon(...keys: string[]): void {
 
 const updateTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+const refreshSeq = new Map<string, number>();
+
 async function refreshItem(id: string): Promise<void> {
+  // Responses can arrive out of order; only the latest request may write.
+  const seq = (refreshSeq.get(id) ?? 0) + 1;
+  refreshSeq.set(id, seq);
   try {
     const item = await api.item(id);
+    if (refreshSeq.get(id) !== seq) return;
     queryClient.setQueryData(["item", id], item);
     patchCard(item);
   } catch {

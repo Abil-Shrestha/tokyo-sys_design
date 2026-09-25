@@ -38,6 +38,15 @@ async function videoPoster(item: ItemCard): Promise<void> {
   video.preload = "auto";
   video.crossOrigin = "anonymous";
   video.src = blobUrl(item.asset!);
+  try {
+    await capturePoster(item, video);
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+  }
+}
+
+async function capturePoster(item: ItemCard, video: HTMLVideoElement): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("timeout")), 20_000);
     video.addEventListener("loadedmetadata", () => {
@@ -57,8 +66,6 @@ async function videoPoster(item: ItemCard): Promise<void> {
   canvas.width = Math.round((video.videoWidth || 1280) * scale);
   canvas.height = Math.round((video.videoHeight || 720) * scale);
   canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
-  video.removeAttribute("src");
-  video.load();
   await api.setPreview(item.id, await canvasToBlob(canvas));
 }
 
@@ -69,8 +76,8 @@ async function pdfDerive(item: ItemCard): Promise<void> {
   const workerUrl = (await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")).default;
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
   const task = pdfjs.getDocument({ url: blobUrl(item.asset!) });
-  const doc = await task.promise;
   try {
+    const doc = await task.promise;
     if (!item.preview) {
       const page = await doc.getPage(1);
       const base = page.getViewport({ scale: 1 });

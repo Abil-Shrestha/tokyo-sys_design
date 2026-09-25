@@ -43,6 +43,7 @@ async function step(name, fn) {
     failures++;
     results.push(`  ✗ ${name}\n      ${String(err.message).split("\n")[0]}`);
   }
+  if (process.env.E2E_VERBOSE) console.log(results[results.length - 1]);
 }
 
 const executablePath = path.join(root, "node_modules", "electron", "dist", process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : process.platform === "win32" ? "electron.exe" : "electron");

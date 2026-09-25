@@ -290,9 +290,14 @@ export function SettingsModal() {
   const tab = useUi((s) => s.settingsTab);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setState({ settingsOpen: false });
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture phase: Escape closes settings only, not an item open behind it.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector(".dialog")) return;
+      e.stopPropagation();
+      setState({ settingsOpen: false });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [open]);
   if (!open) return null;
   return (

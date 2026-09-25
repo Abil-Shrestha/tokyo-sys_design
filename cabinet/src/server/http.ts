@@ -64,6 +64,12 @@ function strArray(v: unknown): string[] | undefined {
   return v.filter((x): x is string => typeof x === "string").slice(0, 1000);
 }
 
+function num(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 function ids(v: unknown): string[] {
   const list = strArray(v) ?? [];
   if (!list.length) throw new HttpError(400, "ids required");
@@ -77,7 +83,9 @@ function dataUrlToBuffer(dataUrl: string | undefined): Buffer | null {
 }
 
 export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 60 * 1024 * 1024 });
+  // forceCloseConnections: live-update streams never end on their own, so
+  // closing the server must cut them or shutdown would wait forever.
+  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 60 * 1024 * 1024, forceCloseConnections: true });
   const lib = cabinet.lib;
   const token = () => cabinet.config.get().token;
   let boundPort = 0;
@@ -116,10 +124,13 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
   // the session cookie set when the UI is served, plus a custom header on
   // writes so other sites cannot forge requests.
   app.addHook("preHandler", async (req, reply) => {
-    if (!req.url.startsWith("/api/") || req.url === "/api/ping") return;
+    // Decide on the matched route, not the raw URL: Fastify decodes the path
+    // before routing, so "/%61pi/info" would otherwise reach /api/info.
+    const route = req.routeOptions?.url ?? "";
+    if (!route.startsWith("/api/") || route === "/api/ping") return;
     const auth = req.headers.authorization;
     const bearer = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
-    const queryToken = req.url.startsWith("/api/events") ? (req.query as Record<string, string>)?.token : null;
+    const queryToken = route === "/api/events" ? (req.query as Record<string, string>)?.token : null;
     const session = cookie(req, SESSION_COOKIE);
     const t = token();
     if ((bearer && safeEqual(bearer, t)) || (queryToken && safeEqual(queryToken, t))) return;
@@ -212,9 +223,9 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
       collectionId: q.collection || undefined,
       sort,
       cursor: q.cursor,
-      limit: q.limit ? Number(q.limit) : undefined,
+      limit: num(q.limit),
       trash: q.trash === "1" || q.trash === "true",
-      seed: q.seed ? Number(q.seed) : undefined,
+      seed: num(q.seed),
     });
   });
 
@@ -380,8 +391,8 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
   app.delete("/api/trash", async () => ({ count: await lib.emptyTrash() }));
 
   app.get("/api/serendipity", async (req) => {
-    const limit = Number((req.query as Record<string, string>).limit ?? 20);
-    return lib.serendipity(Math.min(Math.max(limit, 1), 100));
+    const limit = num((req.query as Record<string, string>).limit) ?? 20;
+    return lib.serendipity(Math.min(Math.max(Math.round(limit), 1), 100));
   });
 
   // ---------------------------------------------------------------------------
@@ -395,7 +406,7 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
     return { ok: true };
   });
   app.delete("/api/tags/:name", async (req) => {
-    lib.deleteTag(decodeURIComponent((req.params as { name: string }).name));
+    lib.deleteTag((req.params as { name: string }).name);
     return { ok: true };
   });
 
@@ -511,6 +522,20 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
 
   // ---------------------------------------------------------------------------
   // Files
+  //
+  // Stored files come from the web and from other apps, and this origin can
+  // read the API. Only media the UI displays is served inline; everything
+  // else downloads, and nothing served here may run script.
+
+  const INLINE = /^(image\/(jpeg|png|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon)|video\/|audio\/|application\/pdf$)/;
+  const fileHeaders = (reply: FastifyReply, mime: string, name: string, forceDownload: boolean) => {
+    void reply.header("X-Content-Type-Options", "nosniff");
+    if (mime !== "application/pdf") void reply.header("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox");
+    if (forceDownload || !INLINE.test(mime)) {
+      const safe = name.replace(/["\\\r\n]/g, "");
+      void reply.header("Content-Disposition", `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(safe)}`);
+    }
+  };
 
   app.get("/blobs/:hash", async (req, reply) => {
     const hash = (req.params as { hash: string }).hash.replace(/\..*$/, "");
@@ -518,26 +543,21 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
     const file = blob && lib.blobs.filePath(hash);
     if (!blob || !file) throw new HttpError(404, "File not found");
     const q = req.query as Record<string, string>;
-    if (q.download) {
-      const name = (q.name || `file.${blob.ext}`).replace(/["\\\r\n]/g, "");
-      void reply.header("Content-Disposition", `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`);
-    }
+    fileHeaders(reply, blob.mime, q.name || `file.${blob.ext}`, !!q.download);
     void reply.header("Cache-Control", "private, max-age=31536000, immutable");
-    void reply.header("X-Content-Type-Options", "nosniff");
-    // SVGs can carry scripts; keep them from running if opened directly.
-    if (blob.mime === "image/svg+xml") void reply.header("Content-Security-Policy", "script-src 'none'; sandbox");
     void reply.type(blob.mime);
     return reply.sendFile(path.basename(file), path.dirname(file), { cacheControl: false, contentType: false });
   });
 
   app.get("/thumbs/:hash", async (req, reply) => {
     const hash = (req.params as { hash: string }).hash;
-    const width = Number((req.query as Record<string, string>).w ?? 480) || 480;
+    const width = num((req.query as Record<string, string>).w) ?? 480;
     const blob = lib.blobs.get(hash);
     const file = blob && lib.blobs.filePath(hash);
     if (!blob || !file) throw new HttpError(404, "File not found");
     void reply.header("Cache-Control", "private, max-age=31536000, immutable");
     if (!/^image\/(jpeg|png|gif|webp|avif|svg\+xml|tiff|bmp)$/.test(blob.mime)) {
+      fileHeaders(reply, blob.mime, `file.${blob.ext}`, false);
       void reply.type(blob.mime);
       return reply.sendFile(path.basename(file), path.dirname(file), { cacheControl: false, contentType: false });
     }
@@ -546,6 +566,7 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
       void reply.type("image/webp");
       return reply.sendFile(path.basename(thumb), path.dirname(thumb), { cacheControl: false, contentType: false });
     } catch {
+      fileHeaders(reply, blob.mime, `file.${blob.ext}`, false);
       void reply.type(blob.mime);
       return reply.sendFile(path.basename(file), path.dirname(file), { cacheControl: false, contentType: false });
     }

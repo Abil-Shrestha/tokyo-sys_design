@@ -15,14 +15,19 @@ export interface ImportedBookmark {
 
 const ROOT_FOLDERS = new Set(["bookmarks bar", "bookmarks toolbar", "other bookmarks", "bookmarks menu", "mobile bookmarks", "favorites", "favourites bar", "bookmarks", "unfiled"]);
 
+/** A character for a numeric entity, or U+FFFD for an invalid one. */
+function codePoint(n: number): string {
+  return Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "\ufffd";
+}
+
 function decodeEntities(s: string): string {
   return s
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (_, n) => codePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => codePoint(parseInt(n, 16)))
     .replace(/&amp;/g, "&");
 }
 

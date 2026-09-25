@@ -1,6 +1,6 @@
 import { FolderPlus, Import, Link2, PanelLeftOpen, Plus, Search, StickyNote, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { saveText, uploadFiles } from "../actions";
+import { saveText, startNote, uploadFiles } from "../actions";
 import { api } from "../api";
 import { isUrl } from "../lib/format";
 import { queryClient } from "../queries";
@@ -50,7 +50,7 @@ export function TopBar() {
 
   const addMenu = (el: HTMLElement) =>
     openMenuAt(el, [
-      { label: "New note", icon: <StickyNote size={15} />, shortcut: "N", onSelect: () => setState({ composing: true, scope: getState().scope.type === "serendipity" || getState().scope.type === "trash" ? { type: "all" } : getState().scope }) },
+      { label: "New note", icon: <StickyNote size={15} />, shortcut: "N", onSelect: startNote },
       {
         label: "Save a link…",
         icon: <Link2 size={15} />,

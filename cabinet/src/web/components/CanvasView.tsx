@@ -81,28 +81,32 @@ export function CanvasView({ collection, items }: { collection: Collection; item
     if (dirty.current.size) persist();
   }, [placements, persist]);
 
-  const fit = useCallback(() => {
-    const el = rootRef.current;
-    if (!el || !placements.size) return;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    const byId = new Map(items.map((i) => [i.id, i]));
-    for (const p of placements.values()) {
-      const item = byId.get(p.itemId);
-      if (!item) continue;
-      const h = cardLayout(item, p.w).height;
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x + p.w);
-      maxY = Math.max(maxY, p.y + h);
-    }
-    if (!Number.isFinite(minX)) return;
-    const pad = 60;
-    const scale = Math.min(1.2, Math.max(0.1, Math.min((el.clientWidth - pad * 2) / (maxX - minX), (el.clientHeight - pad * 2) / (maxY - minY))));
-    setCamera({ scale, x: pad - minX * scale + (el.clientWidth - pad * 2 - (maxX - minX) * scale) / 2, y: pad - minY * scale });
-  }, [placements, items]);
+  const fitTo = useCallback(
+    (map: Map<string, CanvasPlacement>) => {
+      const el = rootRef.current;
+      if (!el || !map.size) return;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      const byId = new Map(items.map((i) => [i.id, i]));
+      for (const p of map.values()) {
+        const item = byId.get(p.itemId);
+        if (!item) continue;
+        const h = cardLayout(item, p.w).height;
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + p.w);
+        maxY = Math.max(maxY, p.y + h);
+      }
+      if (!Number.isFinite(minX)) return;
+      const pad = 60;
+      const scale = Math.min(1.2, Math.max(0.1, Math.min((el.clientWidth - pad * 2) / (maxX - minX), (el.clientHeight - pad * 2) / (maxY - minY))));
+      setCamera({ scale, x: pad - minX * scale + (el.clientWidth - pad * 2 - (maxX - minX) * scale) / 2, y: pad - minY * scale });
+    },
+    [items],
+  );
+  const fit = useCallback(() => fitTo(placements), [fitTo, placements]);
 
   useEffect(() => {
     if (!initialised.current && placements.size && items.length) {
@@ -252,7 +256,7 @@ export function CanvasView({ collection, items }: { collection: Collection; item
             const next = tidy(items);
             for (const id of next.keys()) dirty.current.add(id);
             setPlacements(next);
-            setTimeout(fit, 30);
+            fitTo(next);
           }}
         >
           <LayoutGrid size={15} />

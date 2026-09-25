@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FolderPlus, Hash, Import, Inbox, Layers, Moon, Pin, Search, Settings, Sparkles, StickyNote, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { pickFiles } from "../actions";
+import { pickFiles, startNote } from "../actions";
 import { api, thumb } from "../api";
 import { displayTitle, typeLabel } from "../lib/format";
 import { useCollections, useTags } from "../queries";
@@ -26,12 +26,15 @@ export function CommandPalette() {
   const listRef = useRef<HTMLDivElement>(null);
   const { data: collections = [] } = useCollections();
   const { data: tags = [] } = useTags();
-  const { data: results } = useQuery({
+  const { data: lastResults } = useQuery({
     queryKey: ["palette", q],
     queryFn: () => api.items({ q, limit: 8 }),
     enabled: open && q.trim().length > 0,
     placeholderData: (p) => p,
   });
+
+  // Placeholder data from an earlier search must not show for an empty box.
+  const results = q.trim() ? lastResults : undefined;
 
   useEffect(() => {
     if (open) {
@@ -80,7 +83,7 @@ export function CommandPalette() {
         group: "Go to",
         run: () => goTo({ type: "collection", id: c.id }),
       })),
-      { id: "new-note", label: "New note", icon: <StickyNote size={15} />, group: "Actions", run: () => setState({ composing: true, scope: { type: "all" }, openItemId: null }) },
+      { id: "new-note", label: "New note", icon: <StickyNote size={15} />, group: "Actions", run: startNote },
       {
         id: "upload",
         label: "Upload files…",
@@ -134,6 +137,7 @@ export function CommandPalette() {
             placeholder="Search items, collections, tags and commands…"
             onKeyDown={(e) => {
               e.stopPropagation();
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === "Escape") close();
               else if (e.key === "ArrowDown") {
                 e.preventDefault();

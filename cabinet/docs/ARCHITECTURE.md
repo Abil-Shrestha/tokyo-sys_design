@@ -103,8 +103,12 @@ out without measuring the DOM and only visible cards are mounted.
   `HttpOnly; SameSite=Strict` session cookie set when the UI is served, plus a
   custom header on writes so other sites cannot forge requests.
 - CORS is granted only to browser-extension origins.
-- Captured article HTML is sanitised with DOMPurify before display; SVG
-  originals are served with a CSP that blocks scripts.
+- Authentication is decided on the matched route, not the raw URL, so
+  percent-encoded paths cannot slip past it.
+- Captured article HTML is sanitised with DOMPurify before display. Stored
+  files are served with a sandboxing Content-Security-Policy, and anything
+  other than images, video, audio and PDF is sent as a download, so a saved
+  HTML or SVG file can never run script on the app's origin.
 - The Electron window uses context isolation and a sandboxed preload; links
   open in the default browser.
 

@@ -16,7 +16,8 @@ export function Composer() {
 
   useEffect(() => {
     if (composing) {
-      ref.current?.focus();
+      ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+      ref.current?.focus({ preventScroll: true });
       setState({ composing: false });
     }
   }, [composing]);

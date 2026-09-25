@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, CheckSquare, Copy, FolderPlus, Hash, Layers, Maximize2, Pin, PinOff, RotateCcw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from "react";
 import type { ItemCard } from "../shared/types";
-import { addToCollection, copyText, openExternal, pickFiles, purgeItems, restoreItems, saveTransfer, setPinned, trashItems } from "./actions";
+import { addToCollection, copyText, openExternal, pickFiles, purgeItems, restoreItems, saveTransfer, setPinned, startNote, trashItems } from "./actions";
 import { api } from "./api";
 import { CanvasView } from "./components/CanvasView";
 import { CommandPalette } from "./components/CommandPalette";
@@ -203,7 +203,8 @@ export function App() {
   const selection = useUi((s) => s.selection);
   const gridSize = useUi((s) => s.gridSize);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
-  const { data: collections = [] } = useCollections();
+  const collectionsQuery = useCollections();
+  const collections = useMemo(() => collectionsQuery.data ?? [], [collectionsQuery.data]);
   const collection = scope.type === "collection" ? collections.find((c) => c.id === scope.id) : undefined;
   const itemsQuery = useItems(scope, query, sort);
   const { data: facets } = useFacets(scope, query);
@@ -217,12 +218,15 @@ export function App() {
     if (canvas && itemsQuery.hasNextPage && !itemsQuery.isFetchingNextPage) void itemsQuery.fetchNextPage();
   }, [canvas, itemsQuery]);
 
-  // A collection that no longer exists: go home.
+  // A collection that no longer exists: go home (only once the list is fresh,
+  // so a collection that was just created is not mistaken for a deleted one).
   useEffect(() => {
-    if (scope.type === "collection" && collections.length && !collection) setState({ scope: { type: "all" } });
-  }, [scope, collections, collection]);
+    if (scope.type === "collection" && collectionsQuery.isSuccess && !collectionsQuery.isFetching && !collection) setState({ scope: { type: "all" } });
+  }, [scope, collectionsQuery.isSuccess, collectionsQuery.isFetching, collection]);
 
   const onOpen = useCallback((item: ItemCard) => setState({ openItemId: item.id }), []);
+  const { fetchNextPage } = itemsQuery;
+  const loadMore = useCallback(() => void fetchNextPage(), [fetchNextPage]);
 
   const onToggleSelect = useCallback(
     (item: ItemCard, e: MouseEvent) => {
@@ -299,8 +303,7 @@ export function App() {
         else if (command === "sidebar") setState({ sidebarOpen: !s.sidebarOpen });
         else if (command === "upload") pickFiles();
         else if (command === "import") void importBookmarksFlow();
-        else if (command === "new-note")
-          setState({ composing: true, query: "", openItemId: null, scope: s.scope.type === "all" || s.scope.type === "collection" ? s.scope : { type: "all" } });
+        else if (command === "new-note") startNote();
       }),
     [],
   );
@@ -333,15 +336,22 @@ export function App() {
       depth = Math.max(0, depth - 1);
       if (!depth) setDragging(false);
     };
+    // Text dragged onto a text field goes into the field, as usual.
+    const intoField = (e: globalThis.DragEvent) => isEditable(e.target) && !Array.from(e.dataTransfer?.types ?? []).includes("Files");
     const over = (e: globalThis.DragEvent) => {
       if (!external(e)) return;
+      if (intoField(e)) {
+        setDragging(false);
+        return;
+      }
+      setDragging(true);
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
     };
     const drop = (e: globalThis.DragEvent) => {
       depth = 0;
       setDragging(false);
-      if (!external(e) || !e.dataTransfer) return;
+      if (!external(e) || !e.dataTransfer || intoField(e)) return;
       e.preventDefault();
       void saveTransfer(e.dataTransfer);
     };
@@ -357,30 +367,34 @@ export function App() {
     };
   }, []);
 
+  // ⌘K and ⌘, work everywhere, even while typing, so they listen first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "k" && key !== ",") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (key === "k") setState((s) => ({ paletteOpen: !s.paletteOpen }));
+      else setState({ settingsOpen: true, paletteOpen: false });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   // Keyboard shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = isEditable(e.target);
       const mod = e.metaKey || e.ctrlKey;
       const s = getState();
-      if (mod && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setState({ paletteOpen: !s.paletteOpen });
-        return;
-      }
-      if (mod && e.key === ",") {
-        e.preventDefault();
-        setState({ settingsOpen: true });
-        return;
-      }
       if (typing || s.openItemId || s.paletteOpen || s.settingsOpen) return;
       if (e.key === "/") {
         e.preventDefault();
         focusSearch();
-      } else if (e.key === "n" && !mod) {
+      } else if (e.key === "n" && !mod && !e.altKey) {
         e.preventDefault();
-        if (s.scope.type !== "all" && s.scope.type !== "collection") setState({ scope: { type: "all" } });
-        setState({ composing: true, query: "" });
+        startNote();
       } else if (e.key === "Escape" && s.selection.size) {
         setState({ selection: new Set() });
       } else if (mod && e.key.toLowerCase() === "a") {
@@ -414,7 +428,13 @@ export function App() {
         <div className="canvas-header">
           <ListHeader scope={scope} total={total} facets={facets} collection={collection} />
         </div>
-        <CanvasView collection={collection} items={items} />
+        {itemsQuery.isPlaceholderData ? (
+          <div className="grid-more">
+            <span className="spinner" />
+          </div>
+        ) : (
+          <CanvasView key={collection.id} collection={collection} items={items} />
+        )}
       </div>
     );
   } else {
@@ -424,7 +444,8 @@ export function App() {
         targetWidth={gridSize}
         hasMore={!!itemsQuery.hasNextPage}
         loadingMore={itemsQuery.isFetchingNextPage}
-        onLoadMore={() => void itemsQuery.fetchNextPage()}
+        loadFailed={itemsQuery.isFetchNextPageError}
+        onLoadMore={loadMore}
         selection={selection}
         onOpen={onOpen}
         onToggleSelect={onToggleSelect}

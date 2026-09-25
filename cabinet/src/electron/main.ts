@@ -328,7 +328,8 @@ async function start(): Promise<void> {
   const port = await listen(server, config.get().port);
   baseUrl = `http://127.0.0.1:${port}/`;
 
-  // Snapshots should look like a normal browser visit.
+  // Snapshots should look like a normal browser visit, and never download.
+  session.fromPartition("persist:snapshots").on("will-download", (e) => e.preventDefault());
   session.fromPartition("persist:snapshots").setUserAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
   );
@@ -370,10 +371,12 @@ app.on("will-quit", (e) => {
     const c = cabinet;
     server = null;
     cabinet = null;
+    // Finish writing, then exit. (A second app.quit() here can be ignored
+    // while Electron is still unwinding the quit that was just cancelled.)
     void (async () => {
       await s?.close().catch(() => {});
       await c?.close().catch(() => {});
-      app.quit();
+      app.exit(0);
     })();
   }
 });

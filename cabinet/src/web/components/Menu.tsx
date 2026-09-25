@@ -31,6 +31,10 @@ export function openMenuAt(el: HTMLElement, items: MenuItem[]): void {
   openMenu(r.left, r.bottom + 4, items);
 }
 
+export function isMenuOpen(): boolean {
+  return current !== null;
+}
+
 export function closeMenu(): void {
   current = null;
   notify();

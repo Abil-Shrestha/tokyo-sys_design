@@ -94,7 +94,12 @@ export function getState(): UiState {
 
 export function setState(patch: Partial<UiState> | ((s: UiState) => Partial<UiState>)): void {
   const next = typeof patch === "function" ? patch(state) : patch;
+  const prev = state;
   state = { ...state, ...next };
+  // A selection only makes sense for the list it was made in.
+  const viewChanged =
+    ("scope" in next && JSON.stringify(next.scope) !== JSON.stringify(prev.scope)) || ("query" in next && next.query !== prev.query);
+  if (viewChanged && !("selection" in next) && prev.selection.size) state.selection = new Set();
   if ("scope" in next || "openItemId" in next) {
     const h = hashFor(state.scope, state.openItemId);
     if (location.hash !== h) history.replaceState(null, "", h);

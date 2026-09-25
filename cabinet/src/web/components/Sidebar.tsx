@@ -4,12 +4,23 @@ import { useState, type DragEvent, type ReactNode } from "react";
 import type { Collection } from "../../shared/types";
 import { addToCollection, trashItems } from "../actions";
 import { api, thumb } from "../api";
-import { useCollections, useLibraryCounts, useTags } from "../queries";
+import { queryClient, useCollections, useLibraryCounts, useTags } from "../queries";
 import { errorToast, getState, goTo, setState, toast, useUi, type Scope } from "../store";
 import { confirmDialog, promptText } from "./Dialogs";
 import { openMenu } from "./Menu";
 
 export const DRAG_TYPE = "application/x-cabinet-items";
+
+/** The first visible character, keeping emoji with skin tones, flags and joiners whole. */
+function firstGrapheme(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const first = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(t)[Symbol.iterator]().next().value;
+    return first?.segment ?? null;
+  }
+  return [...t][0] ?? null;
+}
 
 function NavRow({
   icon,
@@ -107,6 +118,9 @@ export async function createCollection(kind: "manual" | "smart" = "manual", item
   if (!name) return null;
   try {
     const c = await api.createCollection({ name, kind, query: kind === "smart" ? query : undefined, itemIds });
+    // Put it in the cache before navigating so the view can find it at once.
+    queryClient.setQueryData<Collection[]>(["collections"], (old) => [...(old ?? []).filter((x) => x.id !== c.id), c]);
+    void queryClient.invalidateQueries({ queryKey: ["collections"] });
     goTo({ type: "collection", id: c.id });
     return c;
   } catch (err) {
@@ -142,7 +156,8 @@ export function Sidebar() {
         label: "Set icon…",
         onSelect: async () => {
           const icon = await promptText({ title: "Collection icon", message: "Type or paste an emoji. Leave empty to use the cover image.", initial: c.icon ?? "", confirmLabel: "Set" });
-          await api.updateCollection(c.id, { icon: icon ? [...icon][0] : null }).catch(errorToast);
+          if (icon === null) return;
+          await api.updateCollection(c.id, { icon: firstGrapheme(icon) }).catch(errorToast);
           void qc.invalidateQueries({ queryKey: ["collections"] });
         },
       },

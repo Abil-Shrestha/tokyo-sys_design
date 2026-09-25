@@ -1,3 +1,4 @@
+import type { Collection } from "../shared/types";
 import { api } from "./api";
 import { confirmDialog } from "./components/Dialogs";
 import { isUrl, plural } from "./lib/format";
@@ -168,4 +169,18 @@ export function pickFiles(): void {
   input.multiple = true;
   input.onchange = () => void uploadFiles(Array.from(input.files ?? []));
   input.click();
+}
+
+/** Goes to a view that shows the note composer and focuses it. */
+export function startNote(): void {
+  const s = getState();
+  const collections = queryClient.getQueryData<Collection[]>(["collections"]) ?? [];
+  const manualCollection = s.scope.type === "collection" && collections.find((c) => c.id === (s.scope as { id: string }).id)?.kind === "manual";
+  setState({
+    scope: s.scope.type === "all" || manualCollection ? s.scope : { type: "all" },
+    query: "",
+    openItemId: null,
+    paletteOpen: false,
+    composing: true,
+  });
 }

@@ -18,6 +18,7 @@ let current: DialogState | null = null;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 
+/** Resolves with the text entered ("" if left empty), or null if cancelled. */
 export function promptText(opts: { title: string; message?: string; initial?: string; placeholder?: string; confirmLabel?: string }): Promise<string | null> {
   return new Promise((resolve) => {
     current = { kind: "prompt", ...opts, resolve: (v) => resolve(typeof v === "string" ? v : null) };
@@ -63,7 +64,7 @@ export function DialogHost() {
   }, [state]);
 
   if (!state) return null;
-  const submit = () => close(state.kind === "prompt" ? value.trim() || null : true);
+  const submit = () => close(state.kind === "prompt" ? value.trim() : true);
   return (
     <div className="dialog-backdrop" onMouseDown={() => close(state.kind === "prompt" ? null : false)}>
       <form

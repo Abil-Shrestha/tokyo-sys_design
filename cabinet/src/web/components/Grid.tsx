@@ -8,6 +8,8 @@ export interface GridProps {
   targetWidth: number;
   hasMore: boolean;
   loadingMore: boolean;
+  /** Stop asking for more after a failed page load. */
+  loadFailed?: boolean;
   onLoadMore: () => void;
   selection: Set<string>;
   onOpen: (item: ItemCard) => void;
@@ -76,11 +78,12 @@ export function Grid(props: GridProps) {
   }, []);
 
   // Infinite loading.
+  const { hasMore, loadingMore, loadFailed, onLoadMore } = props;
   useEffect(() => {
-    if (!layout || !props.hasMore || props.loadingMore) return;
+    if (!layout || !hasMore || loadingMore || loadFailed) return;
     const bottom = headerHeight + layout.total;
-    if (bottom - (viewport.top + viewport.height) < viewport.height * 1.5) props.onLoadMore();
-  }, [layout, viewport, props.hasMore, props.loadingMore, headerHeight, props]);
+    if (bottom - (viewport.top + viewport.height) < viewport.height * 1.5) onLoadMore();
+  }, [layout, viewport, hasMore, loadingMore, loadFailed, headerHeight, onLoadMore]);
 
   const offset = leading ? 1 : 0;
   const top = viewport.top - headerHeight - OVERSCAN;
@@ -94,7 +97,7 @@ export function Grid(props: GridProps) {
       </div>
       <div className="grid" style={{ height: layout ? layout.total : 0, margin: `0 ${PADDING_X}px` }}>
         {layout?.placed.map((p) => {
-          if (p.y + p.h < top || p.y > bottom) return null;
+          // The leading cell (the composer) is never culled, so a draft survives scrolling.
           if (leading && p.index === 0) {
             return (
               <div key="__leading" className="grid-cell" style={{ transform: `translate(${p.x}px, ${p.y}px)`, width: p.w, height: p.h }}>
@@ -102,6 +105,7 @@ export function Grid(props: GridProps) {
               </div>
             );
           }
+          if (p.y + p.h < top || p.y > bottom) return null;
           const item = items[p.index - offset];
           if (!item) return null;
           return (

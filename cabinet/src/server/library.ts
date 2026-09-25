@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isEmptyQuery, normalizeTag, parseQuery, type ParsedQuery } from "../shared/query";
+import { isEmptyQuery, normalizeTag, parseQuery } from "../shared/query";
 import type {
   CanvasPlacement,
   Collection,
@@ -687,38 +687,46 @@ export class Library extends EventEmitter {
   // ---------------------------------------------------------------------------
   // Listing and search
 
-  private scopeFor(params: ListParams): { q: ParsedQuery; collectionJoin: string; collectionParams: unknown[]; manual: boolean } {
-    let q = parseQuery(params.q ?? "");
+  /** Resolves the collection and search into SQL pieces shared by listing and facets. */
+  private scopeFor(params: ListParams): { from: string; params: unknown[]; hasRank: boolean; where: string[]; manual: boolean } {
+    const q = parseQuery(params.q ?? "");
     let collectionJoin = "";
     const collectionParams: unknown[] = [];
     let manual = false;
+    let rule: ReturnType<typeof buildSearch> | null = null;
     if (params.collectionId) {
       const c = this.db.get<{ kind: string; query: string | null }>("SELECT kind, query FROM collections WHERE id = ?", [params.collectionId]);
       if (c?.kind === "smart") {
-        const smart = parseQuery(c.query ?? "");
-        q = mergeQueries(smart, q);
+        // The collection's rule and the search typed inside it both apply.
+        rule = buildSearch(parseQuery(c.query ?? ""), { rank: false });
       } else {
         manual = true;
         collectionJoin = "JOIN collection_items ci ON ci.item_id = items.id AND ci.collection_id = ?";
         collectionParams.push(params.collectionId);
       }
     }
-    return { q, collectionJoin, collectionParams, manual };
+    const s = buildSearch(q);
+    return {
+      from: `FROM items ${collectionJoin} ${s.join}`,
+      params: [...collectionParams, ...s.joinParams, ...(rule?.params ?? []), ...s.params],
+      where: [...(rule?.where ?? []), ...s.where],
+      hasRank: s.hasRank,
+      manual,
+    };
   }
 
   listItems(params: ListParams): ItemPage {
-    const limit = Math.min(Math.max(params.limit ?? 60, 1), 500);
-    const offset = Math.max(Number(params.cursor ?? 0) || 0, 0);
-    const { q, collectionJoin, collectionParams, manual } = this.scopeFor(params);
-    const s = buildSearch(q);
-    const where = [params.trash ? "items.deleted_at IS NOT NULL" : "items.deleted_at IS NULL", ...s.where];
-    let sort: SortOrder = params.sort ?? (s.hasRank ? "relevance" : "newest");
-    if (sort === "relevance" && !s.hasRank) sort = "newest";
-    let order = orderClause(sort, s.hasRank, params.seed ?? 1);
+    const limit = Math.min(Math.max(Number.isFinite(params.limit) ? Math.round(params.limit!) : 60, 1), 500);
+    const offset = Math.max(Math.floor(Number(params.cursor ?? 0)) || 0, 0);
+    const scope = this.scopeFor(params);
+    const where = [params.trash ? "items.deleted_at IS NOT NULL" : "items.deleted_at IS NULL", ...scope.where];
+    let sort: SortOrder = params.sort ?? (scope.hasRank ? "relevance" : "newest");
+    if (sort === "relevance" && !scope.hasRank) sort = "newest";
+    let order = orderClause(sort, scope.hasRank, params.seed ?? 1);
     if (params.trash && sort === "newest") order = "items.deleted_at DESC";
-    if (manual && sort === "newest" && !s.hasRank) order = "ci.added_at DESC, items.id DESC";
-    const from = `FROM items ${collectionJoin} ${s.join} WHERE ${where.join(" AND ")}`;
-    const baseParams = [...collectionParams, ...s.joinParams, ...s.params];
+    if (scope.manual && sort === "newest" && !scope.hasRank) order = "ci.added_at DESC, items.id DESC";
+    const from = `${scope.from} WHERE ${where.join(" AND ")}`;
+    const baseParams = scope.params;
     const total = Number(this.db.get<{ n: number }>(`SELECT COUNT(*) AS n ${from}`, baseParams)?.n ?? 0);
     const rows = this.db.all<ItemRow>(`SELECT ${CARD_COLUMNS} ${from} ORDER BY ${order} LIMIT ? OFFSET ?`, [...baseParams, limit, offset]);
     const tags = this.tagsFor(rows.map((r) => r.id));
@@ -730,11 +738,9 @@ export class Library extends EventEmitter {
   }
 
   facets(params: ListParams = {}): Facets {
-    const { q, collectionJoin, collectionParams } = this.scopeFor(params);
-    const s = buildSearch(q);
-    const where = ["items.deleted_at IS NULL", ...s.where];
-    const from = `FROM items ${collectionJoin} ${s.join} WHERE ${where.join(" AND ")}`;
-    const p = [...collectionParams, ...s.joinParams, ...s.params];
+    const scope = this.scopeFor(params);
+    const from = `${scope.from} WHERE ${["items.deleted_at IS NULL", ...scope.where].join(" AND ")}`;
+    const p = scope.params;
     const kinds: Record<string, number> = {};
     for (const r of this.db.all<{ kind: string; n: number }>(`SELECT items.kind AS kind, COUNT(*) AS n ${from} GROUP BY items.kind`, p)) kinds[r.kind] = Number(r.n);
     const linkTypes: Record<string, number> = {};
@@ -949,10 +955,11 @@ export class Library extends EventEmitter {
 
   deleteCollection(id: string): void {
     const now = Date.now();
+    const hlc = this.clock.now();
     this.db.tx(() => {
-      this.db.run("UPDATE collections SET deleted_at = ?, updated_at = ? WHERE id = ?", [now, now, id]);
+      this.db.run("UPDATE collections SET deleted_at = ?, updated_at = ?, hlc = ? WHERE id = ?", [now, now, hlc, id]);
       this.db.run("DELETE FROM collection_items WHERE collection_id = ?", [id]);
-      this.logChange("collection", id, "update", { deleted_at: now });
+      this.logChange("collection", id, "update", { deleted_at: now }, hlc);
     });
     this.emitEvent({ type: "collections.changed" });
   }
@@ -1017,26 +1024,4 @@ export class Library extends EventEmitter {
   itemCount(): number {
     return Number(this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE deleted_at IS NULL")?.n ?? 0);
   }
-}
-
-function mergeQueries(a: ParsedQuery, b: ParsedQuery): ParsedQuery {
-  return {
-    words: [...a.words, ...b.words],
-    phrases: [...a.phrases, ...b.phrases],
-    notWords: [...a.notWords, ...b.notWords],
-    soft: [...a.soft, ...b.soft],
-    types: b.types.length ? b.types : a.types,
-    notTypes: [...a.notTypes, ...b.notTypes],
-    tags: [...a.tags, ...b.tags],
-    notTags: [...a.notTags, ...b.notTags],
-    sites: b.sites.length ? b.sites : a.sites,
-    notSites: [...a.notSites, ...b.notSites],
-    colors: [...a.colors, ...b.colors],
-    collections: [...a.collections, ...b.collections],
-    has: [...a.has, ...b.has],
-    notHas: [...a.notHas, ...b.notHas],
-    pinned: b.pinned ?? a.pinned,
-    after: b.after ?? a.after,
-    before: b.before ?? a.before,
-  };
 }

@@ -343,7 +343,12 @@ export class Cabinet {
 
     const ct = res.contentType;
     if (/^(image|video|audio)\//.test(ct) || ct.startsWith("application/pdf")) {
-      // A link that turned out to be a file: keep it as the real thing.
+      // A link that turned out to be a file: keep it as the real thing. The
+      // page fetch stops at 5 MB, so fetch the whole file again if needed.
+      if (res.truncated) {
+        res = await fetchResource(this.fetch, row.url, { maxBytes: 512 * 1024 * 1024, timeoutMs: 180_000, accept: "*/*" });
+        if (res.truncated) throw new Error("The file is larger than 512 MB");
+      }
       const info = await this.lib.blobs.putBuffer(res.body, { mime: ct, name: new URL(res.url).pathname });
       const kind = kindForMime(info.mime);
       const fields: ItemFields = { kind, link_type: null, asset: info.hash, asset_name: new URL(res.url).pathname.split("/").pop() || null, mime: info.mime, size: info.size, status: "ready", error: null };
@@ -376,20 +381,24 @@ export class Cabinet {
       content_html: page.article && (page.linkType === "article" || page.article.words >= 350) ? page.article.html : null,
     };
 
-    // Preview image: keep a local copy so the card survives link rot.
+    // Preview image: keep a local copy so the card survives link rot. The
+    // page's own image replaces a snapshot taken earlier.
     const hadSnapshot = !!meta.snapshot && !!row.preview;
+    const replaced: string[] = [];
     if (page.image && (!row.preview || hadSnapshot || job.payload.force)) {
       try {
         const img = await fetchResource(this.fetch, page.image, { maxBytes: 20 * 1024 * 1024, accept: "image/avif,image/webp,image/*,*/*;q=0.5", referer: res.url });
         if (img.contentType.startsWith("image/") || !img.contentType) {
           const stored = await this.storeImage(img.body, new URL(img.url).pathname);
           if (stored.width && stored.width >= 80) {
-            const old = row.preview;
+            if (row.preview && row.preview !== stored.info.hash) replaced.push(row.preview);
             fields.preview = stored.info.hash;
             fields.width = stored.width;
             fields.height = stored.height;
             fields.colors = stored.colors;
-            if (old && old !== stored.info.hash && !hadSnapshot) void this.lib.collectGarbage([old]);
+            fields.meta = { ...fields.meta, snapshot: undefined };
+          } else {
+            replaced.push(stored.info.hash);
           }
         }
       } catch (err) {
@@ -402,7 +411,12 @@ export class Cabinet {
         const icon = await fetchResource(this.fetch, page.favicon, { maxBytes: 512 * 1024, timeoutMs: 8000, accept: "image/*" });
         if (icon.body.length > 0 && (icon.contentType.startsWith("image/") || /\.(ico|png|svg)$/i.test(page.favicon))) {
           const info = await this.lib.blobs.putBuffer(icon.body, { mime: icon.contentType, name: new URL(icon.url).pathname });
-          if (info.mime.startsWith("image/")) fields.favicon = info.hash;
+          if (info.mime.startsWith("image/")) {
+            if (row.favicon && row.favicon !== info.hash) replaced.push(row.favicon);
+            fields.favicon = info.hash;
+          } else {
+            replaced.push(info.hash);
+          }
         }
       } catch {
         // favicons are optional
@@ -410,6 +424,8 @@ export class Cabinet {
     }
 
     this.lib.patchItem(id, fields, { touch: false });
+    // Only now are the old files unreferenced.
+    if (replaced.length) await this.lib.collectGarbage(replaced);
     if (settings.autoTag) this.lib.replaceGeneratedTags(id, metadataTags(page), "auto");
     if (!fields.preview && !row.preview && this.snapshot) this.jobs.enqueue("snapshot", id);
     this.afterSave(id);
@@ -424,6 +440,7 @@ export class Cabinet {
     const img = await this.storeImage(await normalizeSnapshot(png), "snapshot.webp");
     const meta = parseJson<Record<string, unknown>>(row.meta, {});
     this.lib.patchItem(id, { preview: img.info.hash, width: img.width, height: img.height, colors: img.colors, meta: { ...meta, snapshot: true } }, { touch: false });
+    if (row.preview && row.preview !== img.info.hash) await this.lib.collectGarbage([row.preview]);
   }
 
   private async imageForAi(hash: string | null): Promise<AiInput["image"] | undefined> {

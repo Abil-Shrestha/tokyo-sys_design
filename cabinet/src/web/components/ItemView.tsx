@@ -28,73 +28,98 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Item, ItemCard } from "../../shared/types";
-import { addToCollection, copyText, openExternal, purgeItems, restoreItems, trashItems } from "../actions";
+import { addToCollection, copyText, openExternal, purgeItems, restoreItems, setPinned, trashItems } from "../actions";
 import { api, blobUrl, downloadUrl, thumb } from "../api";
 import { formatBytes, formatPrice, fullDate, isEditable, relativeTime, typeLabel } from "../lib/format";
 import { renderMarkdown, sanitizeArticle } from "../lib/markdown";
 import { useCollections, useInfo, useItem } from "../queries";
-import { errorToast, setState, toast } from "../store";
-import { openMenu, openMenuAt } from "./Menu";
+import { errorToast, getState, setState, toast } from "../store";
+import { isMenuOpen, openMenu, openMenuAt } from "./Menu";
 import { createCollection } from "./Sidebar";
 import { TagEditor } from "./TagEditor";
 
 // ---------------------------------------------------------------------------
 // Autosaving text fields
 
+/**
+ * Local text state for one field of an item, saved after a pause in typing.
+ * While the field has focus or holds unsaved edits, values coming back from
+ * the server (including the echo of our own save) never replace what is on
+ * screen, so typing is never interrupted or undone.
+ */
 function useAutosave(id: string, field: "title" | "note" | "body", serverValue: string | null) {
-  const [value, setValue] = useState(serverValue ?? "");
-  const dirty = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qc = useQueryClient();
+  const [value, setValue] = useState(serverValue ?? "");
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const idRef = useRef(id);
+  const pending = useRef(false);
+  const focused = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const save = useCallback(
+    async (itemId: string, v: string) => {
+      try {
+        const item = await api.update(itemId, { [field]: v });
+        qc.setQueryData(["item", itemId], item);
+      } catch (err) {
+        errorToast(err);
+      } finally {
+        // Only a save of what is currently on screen makes the field clean.
+        if (idRef.current === itemId && valueRef.current === v) pending.current = false;
+      }
+    },
+    [field, qc],
+  );
+
+  // Switching items: save what was typed for the previous one first.
   useEffect(() => {
-    dirty.current = false;
+    idRef.current = id;
+    pending.current = false;
     setValue(serverValue ?? "");
+    return () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+      if (pending.current) void save(id, valueRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
-    if (!dirty.current) setValue(serverValue ?? "");
+    if (!pending.current && !focused.current) setValue(serverValue ?? "");
   }, [serverValue]);
 
-  const flush = useCallback(
-    async (v: string) => {
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
-      try {
-        const item = await api.update(id, { [field]: v });
-        qc.setQueryData(["item", id], item);
-      } catch (err) {
-        errorToast(err);
-      } finally {
-        dirty.current = false;
-      }
-    },
-    [id, field, qc],
-  );
-
-  const valueRef = useRef(value);
-  valueRef.current = value;
-
-  const onChange = (v: string) => {
-    dirty.current = true;
-    setValue(v);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void flush(v), 600);
+  const flush = () => {
+    if (!timer.current) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+    void save(idRef.current, valueRef.current);
   };
 
-  useEffect(
-    () => () => {
-      if (timer.current && dirty.current) {
-        clearTimeout(timer.current);
-        void api.update(id, { [field]: valueRef.current }).catch(() => {});
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id],
-  );
+  const onChange = (v: string) => {
+    pending.current = true;
+    setValue(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      void save(idRef.current, v);
+    }, 600);
+  };
 
-  return { value, onChange, flush: () => dirty.current && flush(valueRef.current) };
+  return {
+    value,
+    onChange,
+    flush,
+    onFocus: () => {
+      focused.current = true;
+    },
+    onBlur: () => {
+      focused.current = false;
+      flush();
+    },
+  };
 }
 
 function AutoTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number }) {
@@ -106,7 +131,19 @@ function AutoTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement> &
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   }, [props.value]);
-  return <textarea ref={ref} rows={minRows} {...rest} onKeyDown={(e) => { e.stopPropagation(); props.onKeyDown?.(e); }} />;
+  return (
+    <textarea
+      ref={ref}
+      rows={minRows}
+      {...rest}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        // Escape leaves the field; a second Escape closes the item.
+        if (e.key === "Escape") (e.target as HTMLTextAreaElement).blur();
+        props.onKeyDown?.(e);
+      }}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -150,11 +187,12 @@ function NoteContent({ item, focus }: { item: Item; focus: boolean }) {
           className="note-editor"
           value={body.value}
           onChange={(e) => body.onChange(e.target.value)}
-          onBlur={() => void body.flush()}
+          onFocus={body.onFocus}
+          onBlur={body.onBlur}
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.key === "Escape") {
-              void body.flush();
+              body.flush();
               setEditing(false);
             }
           }}
@@ -172,7 +210,7 @@ function QuoteContent({ item }: { item: Item }) {
   const body = useAutosave(item.id, "body", item.body);
   return (
     <div className="quote-content">
-      <AutoTextarea className="quote-editor" value={body.value} onChange={(e) => body.onChange(e.target.value)} onBlur={() => void body.flush()} />
+      <AutoTextarea className="quote-editor" value={body.value} onChange={(e) => body.onChange(e.target.value)} onFocus={body.onFocus} onBlur={body.onBlur} />
       {(item.title || item.url) && (
         <div className="quote-source">
           — {item.title ?? item.domain}
@@ -433,6 +471,17 @@ function Panel({ item, onClose }: { item: Item; onClose: () => void }) {
     }
   };
 
+  // Tags change one at a time so tags added meanwhile (by the AI, say) survive.
+  const changeTags = async (action: "tag" | "untag", tag: string) => {
+    try {
+      await api.bulk(action, [item.id], { tags: [tag] });
+      qc.setQueryData(["item", item.id], await api.item(item.id));
+      void qc.invalidateQueries({ queryKey: ["tags"] });
+    } catch (err) {
+      errorToast(err);
+    }
+  };
+
   const refresh = async () => {
     await api.refresh(item.id);
     toast(item.kind === "link" ? "Refreshing…" : "Re-analysing…");
@@ -491,7 +540,7 @@ function Panel({ item, onClose }: { item: Item; onClose: () => void }) {
       </div>
 
       <div className="panel-scroll">
-        <AutoTextarea className="panel-title" value={title.value} placeholder="Add a title" onChange={(e) => title.onChange(e.target.value)} onBlur={() => void title.flush()} />
+        <AutoTextarea className="panel-title" value={title.value} placeholder="Add a title" onChange={(e) => title.onChange(e.target.value)} onFocus={title.onFocus} onBlur={title.onBlur} />
         {item.url && (
           <a className="panel-source" href={item.url} target="_blank" rel="noopener noreferrer" title={item.url}>
             {item.favicon && <img src={blobUrl(item.favicon)} alt="" className="favicon" />}
@@ -515,12 +564,16 @@ function Panel({ item, onClose }: { item: Item; onClose: () => void }) {
 
         <div className="panel-section">
           <div className="panel-section-title">Tags</div>
-          <TagEditor tags={item.tags} onChange={(tags) => void update({ tags })} />
+          <TagEditor
+            tags={item.tags}
+            onAdd={(tag) => void changeTags("tag", tag)}
+            onRemove={(tag) => void changeTags("untag", tag)}
+          />
         </div>
 
         <div className="panel-section">
           <div className="panel-section-title">Note</div>
-          <AutoTextarea className="panel-note" value={note.value} minRows={2} placeholder="Why did you save this?" onChange={(e) => note.onChange(e.target.value)} onBlur={() => void note.flush()} />
+          <AutoTextarea className="panel-note" value={note.value} minRows={2} placeholder="Why did you save this?" onChange={(e) => note.onChange(e.target.value)} onFocus={note.onFocus} onBlur={note.onBlur} />
         </div>
 
         {item.colors.length > 0 && (
@@ -664,14 +717,18 @@ export function ItemView({ id, siblings }: { id: string; siblings: string[] }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isEditable(e.target)) return;
+      const s = getState();
+      if (isEditable(e.target) || s.settingsOpen || s.paletteOpen || isMenuOpen()) return;
+      // Players and embedded pages use the arrow keys themselves.
+      if (e.target instanceof Element && e.target.closest("video, audio, iframe")) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Escape") {
         if (focus) setFocus(false);
         else close();
       } else if (e.key === "ArrowLeft" && prev) setState({ openItemId: prev });
       else if (e.key === "ArrowRight" && next) setState({ openItemId: next });
       else if ((e.key === "Backspace" || e.key === "Delete") && item && !item.deletedAt) void trashItems([item.id]);
-      else if (e.key === "p" && item) void api.update(item.id, { pinned: !item.pinned });
+      else if (e.key === "p" && item) void setPinned([item.id], !item.pinned);
       else return;
       e.preventDefault();
     };
