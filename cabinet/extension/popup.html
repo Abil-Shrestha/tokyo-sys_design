@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <div class="brand">Cabinet <span id="status" class="status">Saving…</span></div>
+
+      <section id="saved" class="hidden">
+        <div class="card">
+          <img id="thumb" alt="" />
+          <div>
+            <div id="title" class="title"></div>
+            <div id="domain" class="domain"></div>
+          </div>
+        </div>
+        <label for="tags">Tags</label>
+        <input id="tags" placeholder="design, inspiration" autocomplete="off" />
+        <label for="note">Note</label>
+        <textarea id="note" placeholder="Why are you saving this?"></textarea>
+        <div class="row">
+          <a id="open" class="button" target="_blank">Open in Cabinet</a>
+          <button id="done" class="primary">Done</button>
+        </div>
+      </section>
+
+      <section id="setup" class="hidden">
+        <p class="hint" style="margin-top: 0">
+          Connect to the Cabinet app. In Cabinet open <b>Settings → Browser extension</b> and copy the address and key.
+        </p>
+        <label for="server">Address</label>
+        <input id="server" placeholder="http://127.0.0.1:47600" />
+        <label for="token">Key</label>
+        <input id="token" type="password" placeholder="Paste the key" />
+        <div class="row"><button id="connect" class="primary">Connect</button></div>
+      </section>
+
+      <section id="error" class="hidden">
+        <p id="error-text" class="hint"></p>
+        <div class="row"><button id="retry">Try again</button><button id="options">Options</button></div>
+      </section>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

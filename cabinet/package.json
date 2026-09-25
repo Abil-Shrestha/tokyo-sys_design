@@ -18,7 +18,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dist": "npm run build && electron-builder",
-    "dist:dir": "npm run build && electron-builder --dir"
+    "dist:dir": "npm run build && electron-builder --dir",
+    "icons": "node scripts/make-icons.mjs",
+    "seed": "tsx scripts/seed-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -50,5 +52,55 @@
     "typescript": "^5.9.3",
     "vite": "^8.3.1",
     "vitest": "^5.0.2"
+  },
+  "author": {
+    "name": "Abil Shrestha"
+  },
+  "build": {
+    "appId": "app.cabinet.desktop",
+    "productName": "Cabinet",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build",
+        "to": ".",
+        "filter": [
+          "tray*.png",
+          "icon.png"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.png",
+      "darkModeSupport": true
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png"
+    }
   }
 }

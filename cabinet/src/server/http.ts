@@ -116,7 +116,7 @@ export async function createServer(cabinet: Cabinet, opts: ServerOptions = {}): 
   // the session cookie set when the UI is served, plus a custom header on
   // writes so other sites cannot forge requests.
   app.addHook("preHandler", async (req, reply) => {
-    if (!req.url.startsWith("/api/")) return;
+    if (!req.url.startsWith("/api/") || req.url === "/api/ping") return;
     const auth = req.headers.authorization;
     const bearer = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
     const queryToken = req.url.startsWith("/api/events") ? (req.query as Record<string, string>)?.token : null;

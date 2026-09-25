@@ -176,7 +176,7 @@ function createWindow(): BrowserWindow {
     },
   });
   w.once("ready-to-show", () => w.show());
-  void w.loadURL(baseUrl);
+  void w.loadURL(process.env.CABINET_DEV_URL || baseUrl);
 
   // Links open in the default browser; the window only ever shows Cabinet.
   w.webContents.setWindowOpenHandler(({ url }) => {
@@ -184,7 +184,7 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
   w.webContents.on("will-navigate", (e, url) => {
-    if (url.startsWith(baseUrl)) return;
+    if (url.startsWith(baseUrl) || (process.env.CABINET_DEV_URL && url.startsWith(process.env.CABINET_DEV_URL))) return;
     e.preventDefault();
     if (isHttpUrl(url)) void shell.openExternal(url);
   });
@@ -290,7 +290,7 @@ function createTray(): void {
 // ---------------------------------------------------------------------------
 
 async function start(): Promise<void> {
-  const config = new ConfigStore(app.getPath("userData"));
+  const config = new ConfigStore(process.env.CABINET_CONFIG_DIR || app.getPath("userData"));
   let { libraryPath } = config.get();
 
   try {

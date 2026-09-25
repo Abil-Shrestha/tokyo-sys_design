@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Save to Cabinet — Options</title>
+    <link rel="stylesheet" href="popup.css" />
+    <style>
+      body { width: auto; max-width: 520px; margin: 40px auto; }
+      h1 { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 34px; margin: 0 0 6px; }
+      ul { padding-left: 18px; color: var(--text-2); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Save to Cabinet</h1>
+      <p class="hint">Connect this extension to the Cabinet app on your computer. In Cabinet, open <b>Settings → Browser extension</b> and copy the address and key.</p>
+      <label for="server">Address</label>
+      <input id="server" placeholder="http://127.0.0.1:47600" />
+      <label for="token">Key</label>
+      <input id="token" type="password" placeholder="Paste the key from Cabinet" />
+      <div class="row"><button id="save" class="primary">Save and test</button></div>
+      <p id="result" class="hint"></p>
+      <label>How to save</label>
+      <ul>
+        <li>Click the toolbar button to save the page you're on (with a snapshot).</li>
+        <li>Right-click a page, link, image, video or selected text → <b>Save … to Cabinet</b>.</li>
+        <li>Hold <b>⌥ Option / Alt</b> and click any image.</li>
+        <li>Press <b>⌥⇧S</b> to save the current page.</li>
+      </ul>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

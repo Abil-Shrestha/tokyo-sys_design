@@ -6,3 +6,4 @@ release/
 coverage/
 # local dev library created by `npm run dev`
 .dev-library/
+.dev-config/

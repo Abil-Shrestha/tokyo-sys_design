@@ -44,12 +44,12 @@ function colorCondition(color: string, params: unknown[]): string {
   const family = colorFamily(color);
   if (family) {
     params.push(family);
-    return "EXISTS (SELECT 1 FROM item_colors c WHERE c.item_id = items.id AND c.name = ? AND c.weight >= 0.08)";
+    return "items.id IN (SELECT item_id FROM item_colors WHERE name = ? AND weight >= 0.08)";
   }
   const lab = hexToLab(color);
   params.push(lab.l, lab.l, lab.a, lab.a, lab.b, lab.b);
-  return `EXISTS (SELECT 1 FROM item_colors c WHERE c.item_id = items.id AND c.weight >= 0.05
-    AND ((c.l - ?) * (c.l - ?) + (c.a - ?) * (c.a - ?) + (c.b - ?) * (c.b - ?)) < 400)`;
+  return `items.id IN (SELECT item_id FROM item_colors WHERE weight >= 0.05
+    AND ((l - ?) * (l - ?) + (a - ?) * (a - ?) + (b - ?) * (b - ?)) < 400)`;
 }
 
 export function buildSearch(q: ParsedQuery): SearchSql {
@@ -65,15 +65,21 @@ export function buildSearch(q: ParsedQuery): SearchSql {
     joinParams.push(match);
   }
 
+  // Soft words match the text OR the colour/type; one id set keeps it indexed.
   for (const soft of q.soft) {
-    const alt: string[] = [];
-    const altParams: unknown[] = [];
-    if (soft.color) alt.push(colorCondition(soft.color, altParams));
-    if (soft.type) alt.push(typeCondition([soft.type], altParams));
-    where.push(
-      `(items.id IN (SELECT item_id FROM items_fts WHERE items_fts MATCH ?) OR ${alt.join(" OR ")})`,
-    );
-    params.push(ftsTerm(soft.word), ...altParams);
+    const sets = ["SELECT item_id FROM items_fts WHERE items_fts MATCH ?"];
+    params.push(ftsTerm(soft.word));
+    const family = soft.color ? colorFamily(soft.color) : null;
+    if (family) {
+      sets.push("SELECT item_id FROM item_colors WHERE name = ? AND weight >= 0.08");
+      params.push(family);
+    }
+    if (soft.type) {
+      const typeParams: unknown[] = [];
+      sets.push(`SELECT id FROM items WHERE ${typeCondition([soft.type], typeParams)}`);
+      params.push(...typeParams);
+    }
+    where.push(`items.id IN (${sets.join(" UNION ")})`);
   }
 
   for (const w of q.notWords) {
