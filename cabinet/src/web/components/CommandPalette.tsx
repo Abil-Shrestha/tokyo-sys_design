@@ -37,10 +37,10 @@ export function CommandPalette() {
   const results = q.trim() ? lastResults : undefined;
 
   useEffect(() => {
-    if (open) {
+    // Reset on close, not on open, so nothing typed right after ⌘K is lost.
+    if (!open) {
       setQ("");
       setActive(0);
-      setTimeout(() => inputRef.current?.focus(), 10);
     }
   }, [open]);
 
@@ -132,6 +132,7 @@ export function CommandPalette() {
           <Search size={17} />
           <input
             ref={inputRef}
+            autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search items, collections, tags and commands…"
